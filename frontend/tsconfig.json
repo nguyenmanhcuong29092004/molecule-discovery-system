@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "target": "ESNext",
+
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  }
+}

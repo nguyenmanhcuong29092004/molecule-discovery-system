@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+venv/
+ENV/
+*.egg-info/
+.pytest_cache/
+.coverage
+
+# Node
+node_modules/
+dist/
+build/
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+
+# Data
+backend/data/exports/*
+backend/data/logs/*
+!backend/data/.gitkeep
+
+# Docker
+docker-compose.override.yml
