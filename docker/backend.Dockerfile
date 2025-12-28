@@ -1,4 +1,3 @@
-cat > docker/backend.Dockerfile << 'EOF'
 FROM python:3.10-slim
 
 RUN apt-get update && apt-get install -y \
@@ -10,11 +9,14 @@ WORKDIR /app
 
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir pytest pytest-asyncio pytest-cov
+
+
 
 COPY backend/ .
 
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
-USER appuser
+# USER appuser
 
 EXPOSE 8000
 

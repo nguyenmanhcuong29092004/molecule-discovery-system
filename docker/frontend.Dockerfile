@@ -1,4 +1,4 @@
-FROM node:18-alpine as development
+FROM node:20-alpine as development
 
 WORKDIR /app
 COPY frontend/package*.json ./
@@ -8,7 +8,7 @@ COPY frontend/ .
 EXPOSE 3000
 CMD ["npm", "run", "dev", "--", "--host"]
 
-FROM node:18-alpine as build
+FROM node:20-alpine as build
 
 WORKDIR /app
 COPY frontend/package*.json ./

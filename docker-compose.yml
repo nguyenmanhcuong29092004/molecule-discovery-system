@@ -1,6 +1,7 @@
-version: '3.8'
+
 
 services:
+  # PostgreSQL Database
   postgres:
     image: postgres:15
     container_name: moldb-postgres
@@ -17,7 +18,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - moldb-network
 
+  # Redis Cache & Message Broker
   redis:
     image: redis:7.2-alpine
     container_name: moldb-redis
@@ -28,7 +32,10 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+    networks:
+      - moldb-network
 
+  # FastAPI Backend
   backend:
     build:
       context: .
@@ -39,8 +46,10 @@ services:
       - ./backend:/app
     ports:
       - "8000:8000"
+    env_file:
+      - .env.docker
     environment:
-      - DATABASE_URL=postgresql://moldb:changeme@postgres:5432/molecule_discovery
+      - DATABASE_URL=postgresql+asyncpg://moldb:1@postgres:5432/molecule_discovery
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
@@ -49,7 +58,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks:
+      - moldb-network
 
+  # Celery Worker
   celery_worker:
     build:
       context: .
@@ -58,31 +70,51 @@ services:
     command: celery -A app.celery_app worker --loglevel=info --concurrency=4
     volumes:
       - ./backend:/app
+    env_file:
+      - .env.docker
     environment:
-      - DATABASE_URL=postgresql://moldb:changeme@postgres:5432/molecule_discovery
+      - DATABASE_URL=postgresql+asyncpg://moldb:1@postgres:5432/molecule_discovery
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
     depends_on:
-      - postgres
-      - redis
-      - backend
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    networks:
+      - moldb-network
 
-  frontend:
+  # Tests Runner
+  tests:
     build:
       context: .
-      dockerfile: docker/frontend.Dockerfile
-      target: development
-    container_name: moldb-frontend
+      dockerfile: docker/backend.Dockerfile
+    container_name: moldb-tests
+    command: tail -f /dev/null  # Keep container running
     volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    ports:
-      - "3000:3000"
+      - ./backend:/app
+    env_file:
+      - .env.docker
     environment:
-      - VITE_API_BASE_URL=http://localhost:8000/api/v1
+      - DATABASE_URL=postgresql+asyncpg://moldb:1@postgres:5432/molecule_discovery
+      - TEST_DATABASE_URL=postgresql+asyncpg://moldb:1@postgres:5432/molecule_discovery_test
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
     depends_on:
-      - backend
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - moldb-network
+
+networks:
+  moldb-network:
+    driver: bridge
 
 volumes:
   postgres_data:
