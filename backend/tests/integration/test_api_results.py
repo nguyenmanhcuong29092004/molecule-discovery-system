@@ -5,9 +5,10 @@ Tests CRUD operations, relationships, constraints, and indexes.
 """
 
 import pytest
+import pytest_asyncio
 import uuid
 from datetime import datetime
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, AsyncEngine, create_async_engine
 from sqlalchemy.orm import sessionmaker
@@ -16,8 +17,9 @@ from app.db import Base, Run, Molecule, Trace
 from typing import AsyncGenerator
 
 
+
 # Test database URL (use separate test database)
-TEST_DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/molecule_discovery_test"
+TEST_DATABASE_URL = "postgresql+asyncpg://moldb:1@postgres:5432/molecule_discovery_test"
 
 
 @pytest.fixture(scope="session")
@@ -29,7 +31,7 @@ def event_loop():
     loop.close()
 
 
-@pytest.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session")
 async def test_engine() -> AsyncGenerator[AsyncEngine, None]:
     """Create test database engine."""
     engine = create_async_engine(
@@ -51,7 +53,7 @@ async def test_engine() -> AsyncGenerator[AsyncEngine, None]:
     await engine.dispose()
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def session(test_engine: AsyncEngine) -> AsyncGenerator[AsyncSession, None]:
     """Create test database session."""
     async_session = sessionmaker(
@@ -62,7 +64,19 @@ async def session(test_engine: AsyncEngine) -> AsyncGenerator[AsyncSession, None
     
     async with async_session() as session:
         yield session
-        await session.rollback()
+        
+        # Clean up: truncate all tables after test
+        try:
+            # If session has pending rollback (e.g., from constraint error),
+            # rollback first before truncating
+            await session.rollback()
+            await session.execute(
+                text("TRUNCATE TABLE traces, molecules, runs RESTART IDENTITY CASCADE")
+            )
+            await session.commit()
+        except Exception:
+            # If cleanup fails, rollback
+            await session.rollback()
 
 
 class TestRunModel:
@@ -518,10 +532,9 @@ class TestTraceModel:
                 run_id=run.id,
                 round_number=round_num,
                 agent_type="test",
-                action=f"action_{i}",
+                action=f"action_{round_num}_{i}",
             )
-            for round_num in [1, 1, 2, 2, 3]
-            for i in range(1)
+            for i, round_num in enumerate([1, 1, 2, 3, 3])
         ]
         
         session.add_all(traces)

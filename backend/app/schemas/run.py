@@ -1,7 +1,8 @@
 """
-Pydantic Models for Run API Requests and Responses
+Run API Schemas (Pydantic Models)
 
-Defines request/response schemas for run management endpoints.
+Defines request/response schemas for run management API endpoints.
+Separated from database models for clean architecture.
 """
 
 from datetime import datetime
@@ -9,7 +10,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
 class RunStatus(str, Enum):
@@ -33,6 +34,7 @@ class RunConfig(BaseModel):
     seed_smiles: List[str] = Field(
         description="List of seed SMILES molecules to start from",
         min_length=1,
+        max_length=10,
     )
     rounds: int = Field(
         default=5,
@@ -43,7 +45,7 @@ class RunConfig(BaseModel):
     candidates_per_round: int = Field(
         default=50,
         description="Number of candidate molecules to generate per round",
-        ge=1,
+        ge=10,
         le=1000,
     )
     constraints: Dict[str, Any] = Field(
@@ -146,6 +148,46 @@ class RunResponse(BaseModel):
                 "total_generated": 50,
                 "total_valid": 45,
                 "total_passed": 30,
+            }
+        },
+    }
+
+
+class RunCreateResponse(RunResponse):
+    """
+    Response schema for create run endpoint.
+    
+    Extends RunResponse with additional fields for async task tracking.
+    """
+
+    task_id: str = Field(description="Celery task ID for async execution")
+    run_id: str = Field(description="Run ID (string format for convenience)")
+    message: str = Field(description="Status message")
+
+    model_config = {
+        "from_attributes": True,
+        "json_schema_extra": {
+            "example": {
+                "id": "123e4567-e89b-12d3-a456-426614174000",
+                "run_id": "123e4567-e89b-12d3-a456-426614174000",
+                "task_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                "status": "pending",
+                "message": "Run queued for execution",
+                "objective": "Generate drug-like molecules",
+                "config": {
+                    "objective": "Generate drug-like molecules",
+                    "seed_smiles": ["CCO"],
+                    "rounds": 5,
+                    "candidates_per_round": 50,
+                },
+                "created_at": "2025-12-29T10:00:00Z",
+                "started_at": None,
+                "completed_at": None,
+                "error_message": None,
+                "user_id": None,
+                "total_generated": 0,
+                "total_valid": 0,
+                "total_passed": 0,
             }
         },
     }

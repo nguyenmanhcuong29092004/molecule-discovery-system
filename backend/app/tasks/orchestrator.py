@@ -189,14 +189,18 @@ async def execute_run_async(run_id: str) -> Dict:
         )
 
         if not gen_result["success"]:
-            logger.error(f"Generation failed in round {round_num}: {gen_result['error']}")
+            error_msg = gen_result['error']
+            logger.error(f"Generation failed in round {round_num}: {error_msg}")
             await log_trace(
                 run_id=run_id,
                 round_number=round_num,
                 agent_type="generator",
                 action="generation_failed",
-                metadata={"error": gen_result["error"]},
+                metadata={"error": error_msg},
             )
+            # If no valid seeds at all, fail the entire workflow
+            if "No valid seed SMILES provided" in error_msg:
+                raise WorkflowError(f"Generation failed: {error_msg}")
             continue
 
         candidates = gen_result["output"]["candidates"]

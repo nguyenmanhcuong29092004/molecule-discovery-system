@@ -12,9 +12,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.chemistry.engine import ChemistryEngine
 from app.db.models import Run
 from app.db.session import get_db
-from app.models.run import RunCreate, RunResponse, RunStatus
+from app.schemas.run import RunCreate, RunCreateResponse, RunResponse, RunStatus
+from app.tasks.orchestrator import execute_run
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -25,7 +27,7 @@ router = APIRouter()
 
 @router.post(
     "",
-    response_model=RunResponse,
+    response_model=RunCreateResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a new run",
     description="Create a new molecule discovery run with validated configuration.",
@@ -33,11 +35,11 @@ router = APIRouter()
 async def create_run(
     run_data: RunCreate,
     db: AsyncSession = Depends(get_db),
-) -> RunResponse:
+) -> RunCreateResponse:
     """
     Create a new molecule discovery run.
     
-    The run is created with status='pending' and can be executed by workers.
+    The run is created with status='pending' and queued for execution.
     
     Validation includes:
     - Objective length (min 10 characters)
@@ -50,13 +52,32 @@ async def create_run(
         db: Database session
         
     Returns:
-        RunResponse: Created run data
+        dict: Created run data with task_id
         
     Raises:
-        HTTPException 422: If validation fails
+        HTTPException 422: If validation fails (invalid SMILES)
         HTTPException 500: If database operation fails
     """
     try:
+        # Validate SMILES before creating run
+        seed_smiles = run_data.config.seed_smiles
+        invalid_smiles = []
+        
+        for smiles in seed_smiles:
+            is_valid, canonical, error = ChemistryEngine.validate_smiles(smiles)
+            if not is_valid:
+                invalid_smiles.append({"smiles": smiles, "error": error})
+        
+        if invalid_smiles:
+            logger.warning(f"Invalid SMILES in run creation: {invalid_smiles}")
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "message": "Invalid SMILES provided",
+                    "invalid_smiles": invalid_smiles,
+                },
+            )
+        
         # Create run with pending status
         run = Run(
             status=RunStatus.PENDING.value,
@@ -69,9 +90,22 @@ async def create_run(
         await db.refresh(run)
 
         logger.info(f"Created run {run.id} with status={run.status}")
+        
+        # Trigger Celery task
+        task = execute_run.delay(str(run.id))
+        
+        logger.info(f"Queued task {task.id} for run {run.id}")
 
-        return RunResponse.model_validate(run)
+        # Return RunCreateResponse with task tracking info
+        return RunCreateResponse(
+            **RunResponse.model_validate(run).model_dump(),
+            task_id=task.id,
+            run_id=str(run.id),
+            message="Run queued for execution"
+        )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to create run: {str(e)}", exc_info=True)
         await db.rollback()

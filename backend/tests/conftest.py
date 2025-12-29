@@ -12,6 +12,7 @@ from typing import AsyncGenerator
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, AsyncEngine, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -26,7 +27,7 @@ from app.main import app
 
 # Test database URL
 TEST_DATABASE_URL = (
-    "postgresql+asyncpg://postgres:postgres@localhost:5432/molecule_discovery_test"
+    "postgresql+asyncpg://moldb:1@postgres:5432/molecule_discovery_test"
 )
 
 
@@ -75,8 +76,10 @@ async def db_session(test_engine: AsyncEngine) -> AsyncGenerator[AsyncSession, N
     Create test database session.
     
     Scope: function - new session for each test.
-    Automatically rolls back after each test.
+    Truncates all tables after each test for isolation.
     """
+    from app.db.models import Run, Molecule, Trace
+    
     async_session = sessionmaker(
         test_engine,
         class_=AsyncSession,
@@ -85,7 +88,52 @@ async def db_session(test_engine: AsyncEngine) -> AsyncGenerator[AsyncSession, N
 
     async with async_session() as session:
         yield session
-        await session.rollback()
+        
+        # Clean up: truncate all tables after test
+        try:
+            # If session has pending rollback (e.g., from constraint error),
+            # rollback first before truncating
+            await session.rollback()
+            await session.execute(
+                text("TRUNCATE TABLE traces, molecules, runs RESTART IDENTITY CASCADE")
+            )
+            await session.commit()
+        except Exception:
+            # If cleanup fails, rollback
+            await session.rollback()
+
+
+@pytest_asyncio.fixture
+async def session(test_engine: AsyncEngine) -> AsyncGenerator[AsyncSession, None]:
+    """
+    Alias for db_session - used by test_api_results.py
+    
+    Scope: function - new session for each test.
+    Truncates all tables after each test for isolation.
+    """
+    from app.db.models import Run, Molecule, Trace
+    
+    async_session = sessionmaker(
+        test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+    async with async_session() as sess:
+        yield sess
+        
+        # Clean up: truncate all tables after test
+        try:
+            # If session has pending rollback (e.g., from constraint error),
+            # rollback first before truncating
+            await sess.rollback()
+            await sess.execute(
+                text("TRUNCATE TABLE traces, molecules, runs RESTART IDENTITY CASCADE")
+            )
+            await sess.commit()
+        except Exception:
+            # If cleanup fails, rollback
+            await sess.rollback()
 
 
 @pytest_asyncio.fixture

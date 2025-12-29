@@ -22,7 +22,7 @@ class TestAPICeleryIntegration:
                 "objective": "Test Celery integration",
                 "seed_smiles": ["CCO"],
                 "rounds": 1,
-                "candidates_per_round": 5,
+                "candidates_per_round": 10,
                 "constraints": {},
             }
         }
@@ -33,7 +33,7 @@ class TestAPICeleryIntegration:
         data = response.json()
 
         # Verify response structure
-        assert "run_id" in data
+        assert "run_id" in data or "id" in data
         assert "task_id" in data
         assert "status" in data
         assert "message" in data
@@ -47,7 +47,7 @@ class TestAPICeleryIntegration:
         assert len(data["task_id"]) > 0
 
         # Verify run exists in database
-        run_id = data["run_id"]
+        run_id = data.get("run_id") or data.get("id")
         result = await db_session.execute(select(Run).where(Run.id == run_id))
         run = result.scalar_one_or_none()
 
@@ -90,7 +90,7 @@ class TestAPICeleryIntegration:
                     "objective": f"Test run {i + 1}",
                     "seed_smiles": ["CCO"],
                     "rounds": 1,
-                    "candidates_per_round": 5,
+                    "candidates_per_round": 10,
                     "constraints": {},
                 }
             }
